@@ -276,7 +276,7 @@
                     ,cur_word: 1
                     ,cur_char: 0
                     ,last_error: ""
-                    ,results: ['','','','','']
+                    ,results: []
                 };
                 this.keypress = this.keypress.bind(this);
                 document.addEventListener('keypress', e=>{
@@ -325,7 +325,7 @@
                     let cur_char = prev_state.cur_char;
                     let words = prev_state.words.map(w=>{return {word:w.word, colors:w.colors}});
                     let last_error = "";
-                    let results = prev_state.results;
+                    let results = [];
                     if (key == 'enter'){
                         if (cur_word != 5){
                             last_error = "Fill the whole table first, then press enter to check your answers."
@@ -336,14 +336,14 @@
                                 let word = words[i].word;
                                 if (this.state.list.some(w=>w==word)){
                                     if (this.matches_constraints([words[i]], answer)){
-                                        results[i] = `${word} is correct!`;
+                                        results.push(`${word} is correct!`);
                                     }
                                     else{
-                                        results[i] = `'${word}' does not match the colours`;
+                                        results.push(`'${word}' does not match the colours`);
                                     }
                                 }
                                 else{
-                                    results[i] = `'${word}' is not in the word list`;
+                                    results.push(`'${word}' is not in the word list`);
                                 }
                             }
                         }
@@ -384,6 +384,7 @@
                         ,cur_char
                         ,words
                         ,last_error
+                        ,results
                     };
                 });
             }
