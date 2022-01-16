@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8"/>
+        <title>Eldrow</title>
+        <script src="https://unpkg.com/react@17/umd/react.development.js" crossorigin></script>
+        <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js" crossorigin></script>
+        <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+        <style>
+            body{
+                text-align:center;
+                min-width:20em;
+                font-family:sans-serif;
+            }
+            div.cell{
+                display: inline-block;
+                border: 1px solid black;
+                min-width: 1.4em;
+                min-height: 1.4em;
+                text-align: center;
+                margin-left: 0.1em;
+                margin-right:0.1em;
+                margin-bottom:0.1em;
+                margin-top:0.1em;
+            }
+
+            @keyframes borderpulse {
+              from {border-color: black;}
+              to {border-color: #999999;}
+            }
+
+            div.cur_cell{
+                border-width:3px;
+                margin-left:calc(0.1em - 1.5px);
+                margin-right:calc(0.1em - 1.5px);
+                margin-bottom:calc(0.1em - 1.5px);
+                margin-top:calc(0.1em - 1.5px);
+                animation: borderpulse 0.6s ease alternate infinite ;
+            }
+
+            div.keyboard_row{
+            }
+
+            div.keyboard_button{
+                display: inline-block;
+                border: 1px solid black;
+                min-width: 1.4em;
+                min-height: 1.4em;
+                text-align: center;
+                margin-left: 0.1em;
+                margin-right:0.1em;
+                margin-bottom:0.2em;
+                padding: 0.1em;
+                background-color:#bbbbbb;
+                cursor:pointer;
+            }
+
+            div.keyboard_button:hover{
+                background-color:#ffffff;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Eldrow</h1>
+        <div id='game'>
+            Loading...
+        </div>
+        <div style='margin-left:auto;margin-right:auto;width:fit-content;'>
+            <div style='text-align:left;'>
+                <h2>What is this?</h2>
+                <p>A game inspired by wordle: <a href='https://www.powerlanguage.co.uk/wordle/'>https://www.powerlanguage.co.uk/wordle/</a></p>
+                <p>Fill in words in the grid from a list of almost 500 of the most common English five letter words.</p>
+                <p>Green means "This letter appears in the final word exactly here".</p>
+                <p>Yellow means "This letter appears somewhere else in the final word".</p>
+                <p>Grey means "This letter is not used in the final word".</p>
+                <p>Each green letter is not considered part of the word when checking for yellow letters.</p>
+                <p>Each green or yellow letter is not considered part of the word when checking for grey letters.</p>
+                <p>The grid will always have at least one solution, but might have more.</p>
+            </div>
+        </div>
+    </body>
+
+    <script type='text/babel'>
+
+        const nbsp = String.fromCharCode(160);
+
+        function spaces(n){
+            let s = [];
+            for (var i = 0; i<= n-1; i++){
+                s.push(nbsp);
+            }
+            return s.join('');
+        }
+
+        //https://stackoverflow.com/questions/25582882/javascript-math-random-normal-distribution-gaussian-bell-curve
+        function randn_bm() {
+            let u = 0, v = 0;
+            while(u === 0) u = Math.random(); //Converting [0,1) to (0,1)
+            while(v === 0) v = Math.random();
+            let num = Math.sqrt( -2.0 * Math.log( u ) ) * Math.cos( 2.0 * Math.PI * v );
+            num = num / 10.0 + 0.5; // Translate to 0 -> 1
+            if (num > 1 || num < 0) return 0;
+            return num
+        }
+
+        class Keyboard extends React.Component{
+            constructor(props){
+                super(props);
+            }
+
+            render(){
+                return <div style={{marginLeft: 'auto', marginRight: 'auto', width: 'fit-content', userSelect:'none'}}>
+                    <div style={{marginTop:'1em', textAlign:'left'}}>
+                    {
+                        this.props.rows.map((row,i)=>
+                            <div key={i} className='keyboard_row' style={{marginLeft:`calc(1.4em * ${this.props.offsets[i]})`}}>
+                                {row.map((c,j) => <div key={`${i}_${j}`} className='keyboard_button' onClick={_=>this.props.keypress(c)}>{c}</div>)}
+                            </div>
+                        )
+                    }
+                    </div>
+                </div>
+            }
+        }
+
+        class Game extends React.Component{
+
+            matches_constraints(constraints, word){
+                for (var i = 0; i<= constraints.length-1; i++){
+                    let con = constraints[i];
+                    for (var c = 0; c<= 4; c++){
+                        let ch = con.word[c];
+                        let col = con.colors[c];
+                        if (col == 2){
+                            if (word[c] != ch) {return false;}
+                        }
+                        if (col == 1){
+                            if (word[c] == ch) {return false;}
+                            if (!word.split('').some(a=>a==ch)) {return false;}
+                        }
+                        if (col == 0){
+                            if (word.split('').some(a=>a==ch)) {return false;}
+                        }
+                    }
+                }
+                return true;
+            }
+
+            uses_all_constraints(from, colors, to){
+                // This used to check for _all_ constraints being met, but that was too restrictive
+                for (var i = 0; i<= 4; i++){
+                    //if (colors[i] == 0){ // can't have this in to
+                    //    if (to.split('').some(c=> c==from[i])){ return false;}
+                    //}
+                    //if (colors[i] == 1){ // must have this somewhere but not here
+                    //    if (to[i]==from[i]){ return false;}
+                    //    if (!to.split('').some(c=> c==from[i])){ return false;}
+                    //}
+                    if (colors[i] == 2){ // must have this exactly here
+                        if (to[i] != from[i]){return false;}
+                    }
+                }
+                return true;
+            }
+
+            sensible_seq(seq, answer){
+                for (var i = seq.length -1 ; i>=1; i--){
+                    let f = seq[i];
+                    let t = seq[i-1];
+                    if ((i==4) && (f.colors.some(c=>c!=0))){return false;}
+                    for (var p = i; p <=seq.length-1; p++){
+                        let f = seq[p];
+                        if (!this.uses_all_constraints(f.word, f.colors, t.word)){
+                            return false;
+                        }
+                    }
+                }
+                return true;
+            }
+
+
+            regress(prev_words, all_words, answer){
+                let n_words = all_words.length;
+                let possible = [];
+                for (var i = 0; i<= n_words-1; i++){
+                    let word = all_words[i];
+                    if (word == answer) {continue;}
+                    if (prev_words.some(w=>w.word == word)) {continue;}
+                    let seq = [...prev_words, {word, colors:this.colors_for_word(word, answer)}];
+                    if (this.sensible_seq(seq, answer)){
+                        possible.push(word);
+                    }
+                }
+                let n = possible.length;
+                return possible;
+            }
+
+            colors_for_word(word, answer){
+                let _word = word.split('');
+                let _answer = answer.split('');
+                let result = _answer.map(_=>0);
+                for (var i = 0; i<= word.length-1; i++){
+                    if (word[i] == _answer[i]){
+                        result[i] = 2;
+                        _answer[i] = ' ';
+                        _word[i] = ' ';
+                    }
+                }
+                for (var i = 0; i<= word.length-1; i++){
+                    if (_answer.some(c=>c==word[i])){
+                        result[i] = 1;
+                        _word[i] = ' ';
+                        let removed = false;
+                        _answer = _answer.map(c => {
+                            if (removed) {return c}
+                            if (c == word[i]){removed = true; return ' ';}
+                        });
+                    }
+                }
+                return result;
+            }
+
+            score(cols){
+                return cols.reduce((a,b)=>a+b,0);
+            }
+
+            constructor(props){
+                super(props);
+                let list = props.wordlist.split('\n');
+                let start_list;
+                let answer;
+                let tries = 0;
+                let limit = 10;
+                retry: while (tries<limit){
+                    tries += 1;
+                    let selection = Math.floor(Math.random() * list.length);
+                    answer = list[selection];
+                    start_list = [
+                        {word: answer, colors:[2,2,2,2,2]}
+                    ]
+                    for (var i = 0; i<= 3; i++){
+                        let words = this.regress(start_list, list, answer);
+                        if (words.length <= 0){
+                            continue retry;
+                        }
+                        let scores = words.map(w=>[w,this.score(this.colors_for_word(w, answer))]);
+                        scores.sort((a,b)=>a[1]-b[1]);
+                        let p = Math.floor((randn_bm()*(scores.length-1)) + (scores.length/2.2));
+                        if (p > scores.length-1) { p = scores.length-1; }
+                        let word = scores[p][0];
+                        let colors = this.colors_for_word(word, answer);
+                        start_list.push({word, colors});
+                    }
+                    break;
+                }
+                let failed = tries >= limit;
+                let grid;
+                if (!failed){
+                    grid = start_list.map(w=>{return{word:spaces(5),colors:w.colors}});
+                    grid[0].word = answer;
+                }
+                else{
+                    let blank = _=>{return{word:spaces(5), colors:[0,0,0,0,0]}};
+                    grid = [
+                        blank()
+                        ,blank()
+                        ,blank()
+                        ,blank()
+                        ,blank()
+                    ];
+                }
+                this.state = {
+                    failed
+                    ,words: grid
+                    ,list
+                    ,cur_word: 1
+                    ,cur_char: 0
+                    ,last_error: ""
+                    ,results: ['','','','','']
+                };
+                this.keypress = this.keypress.bind(this);
+                document.addEventListener('keypress', e=>{
+                    if ((e.charCode >= 97) && (e.charCode <= 122)) {this.keypress(e.key);}
+                    if (e.key == "Enter") {this.keypress('enter');}
+                });
+                document.addEventListener('keydown', e=>{
+                    if (e.key == "Backspace") {this.keypress('back');}
+                });
+            }
+
+            padded_words(){
+                var result = [];
+                for (var i = 4; i>= 0; i--){
+                    if (i < this.state.words.length){
+                        result.push([i,this.state.words[i]]);
+                    }
+                    else{
+                        result.push([i,{word:spaces(5), colors:[0,0,0,0,0]}]);
+                    }
+                }
+                return result;
+            }
+
+            color(n){
+                return{
+                    0: '#aaaaaa'
+                    ,1: '#ffffaa'
+                    ,2: '#aaffaa'
+                }[n];
+            }
+
+            word_line(word, line){
+                let chars = [];
+                for (var i = 0; i<= 4; i++){
+                    chars.push(<div className={((line==this.state.cur_word && i==this.state.cur_char)?['cell', 'cur_cell']:['cell']).join(' ')} key={i} style={{backgroundColor:this.color(word.colors[i])}}>{
+                        word.word[i]
+                    }</div>);
+                }
+                return chars;
+            }
+
+            keypress(key){
+                this.setState((prev_state, props)=>{
+                    let cur_word = prev_state.cur_word;
+                    let cur_char = prev_state.cur_char;
+                    let words = prev_state.words.map(w=>{return {word:w.word, colors:w.colors}});
+                    let last_error = "";
+                    let results = prev_state.results;
+                    if (key == 'enter'){
+                        if (cur_word != 5){
+                            last_error = "Fill the whole table first, then press enter to check your answers."
+                        }
+                        else{
+                            let answer = words[0].word;
+                            for (var i = 1; i<= 4; i++){
+                                let word = words[i].word;
+                                if (this.state.list.some(w=>w==word)){
+                                    if (this.matches_constraints([words[i]], answer)){
+                                        results[i] = `${word} is correct!`;
+                                    }
+                                    else{
+                                        results[i] = `'${word}' does not match the colours`;
+                                    }
+                                }
+                                else{
+                                    results[i] = `'${word}' is not in the word list`;
+                                }
+                            }
+                        }
+                    }
+                    else if (key == 'back'){
+                        if (cur_word == 1 && cur_char == 0){
+                            // can't backspace
+                        }
+                        else{
+                            cur_char -= 1;
+                            if (cur_char < 0){
+                                cur_word -= 1;
+                                cur_char = words[cur_word].word.length - 1;
+                            }
+                            let word = words[cur_word].word;
+                            word = word.split('');
+                            word[cur_char] = nbsp;
+                            word = word.join('');
+                            words[cur_word].word = word;
+                        }
+                    }
+                    else{
+                        if (cur_word <= 4){
+                            let word = words[cur_word].word;
+                            word = word.split('');
+                            word[cur_char] = key;
+                            word = word.join('');
+                            words[cur_word].word = word;
+                            cur_char += 1;
+                            if (cur_char >= word.length){
+                                cur_char = 0;
+                                cur_word += 1;
+                            }
+                        }
+                    }
+                    return {
+                        cur_word
+                        ,cur_char
+                        ,words
+                        ,last_error
+                    };
+                });
+            }
+
+            render(){
+                return <div>{
+                    this.padded_words().map((l, i)=> <div key={l[0]}>{this.word_line(l[1], 4-i)}</div>)
+                }{
+                    this.state.failed?<div>Error: Failed to generate puzzle, reload?</div>:''
+                }
+                    <Keyboard rows={[
+                        'qwertyuiop'.split('')
+                        ,'asdfghjkl'.split('')
+                        ,'zxcvbnm'.split('').concat(['back', 'enter'])
+                    ]} offsets={[0.0, 0.25, 0.75]} keypress={this.keypress}/>
+                    <div>
+                        {this.state.last_error}
+                    </div>
+                    <div>
+                        {this.state.results.reverse().map((s,i)=><p key={i}>{s}</p>)}
+                    </div>
+                </div>;
+            }
+        }
+
+        const game = document.querySelector('#game');
+        fetch('5words.txt').then(resp=>{
+            if (resp.ok){
+                resp.text().then(text=>{
+                    let game_object = <Game wordlist={text.trim()}/>;
+                    ReactDOM.render(game_object, game);
+                },error=>{
+                    ReactDOM.render(<div>Error: Malformed word list??? cannot start game</div>, game);
+                });
+            }
+            else{
+                ReactDOM.render(<div>Error loading word list, cannot start game</div>, game);
+            }
+        });
+
+    </script>
+</html>
