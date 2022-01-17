@@ -204,13 +204,13 @@
                     if (word[i] == _answer[i]){
                         result[i] = 2;
                         _answer[i] = ' ';
-                        _word[i] = ' ';
+                        _word[i] = '-';
                     }
                 }
                 for (var i = 0; i<= word.length-1; i++){
                     if (_answer.some(c=>c==word[i])){
                         result[i] = 1;
-                        _word[i] = ' ';
+                        _word[i] = '-';
                         let removed = false;
                         _answer = _answer.map(c => {
                             if (removed) {return c}
