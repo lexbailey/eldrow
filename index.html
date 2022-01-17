@@ -192,14 +192,14 @@
                 let _answer = answer.split('');
                 let result = _answer.map(_=>0);
                 for (var i = 0; i<= word.length-1; i++){
-                    if (word[i] == _answer[i]){
+                    if (_word[i] == _answer[i]){
                         result[i] = 2;
                         _answer[i] = ' ';
                         _word[i] = '-';
                     }
                 }
                 for (var i = 0; i<= word.length-1; i++){
-                    if (_answer.some(c=>c==word[i])){
+                    if ((_word[i] != '-')&&(_answer.some(c=>c==_word[i]))){
                         result[i] = 1;
                         _word[i] = '-';
                         let removed = false;
