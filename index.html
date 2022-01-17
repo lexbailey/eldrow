@@ -129,19 +129,10 @@
             matches_constraints(constraints, word){
                 for (var i = 0; i<= constraints.length-1; i++){
                     let con = constraints[i];
-                    for (var c = 0; c<= 4; c++){
-                        let ch = con.word[c];
-                        let col = con.colors[c];
-                        if (col == 2){
-                            if (word[c] != ch) {return false;}
-                        }
-                        if (col == 1){
-                            if (word[c] == ch) {return false;}
-                            if (!word.split('').some(a=>a==ch)) {return false;}
-                        }
-                        if (col == 0){
-                            if (word.split('').some(a=>a==ch)) {return false;}
-                        }
+                    let in_word = con.word;
+                    let gen_cols = this.colors_for_word(con.word, word);
+                    if (gen_cols.some((k, i)=> k != con.colors[i])){
+                        return false;
                     }
                 }
                 return true;
@@ -214,7 +205,7 @@
                         let removed = false;
                         _answer = _answer.map(c => {
                             if (removed) {return c}
-                            if (c == word[i]){removed = true; return ' ';}
+                            if (c == word[i]){removed = true; return ' ';}else{return c;}
                         });
                     }
                 }
